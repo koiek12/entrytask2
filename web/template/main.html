@@ -1,0 +1,15 @@
+<html>
+<body>
+    <h1>User Information</h1>
+    <form action="/users/{{.Id}}/profile/picture" method="POST" enctype="multipart/form-data">
+        <div><img src="/static/{{.PicPath}}"></div>
+        <div><input type="file" id="picFile" name="picFile"></div>
+        <div><input type="submit" value="upload picture"></div>
+    </form>
+    <form action="/users/{{.Id}}" method="POST">
+        <div>ID : {{.Id}}</div>
+        <div>Nickname : <input type="text" id="nickname" name="nickname" value="{{.Nickname}}"></div>
+        <div><input type="submit" value="edit"></div>
+    </form>
+</body>
+</html>

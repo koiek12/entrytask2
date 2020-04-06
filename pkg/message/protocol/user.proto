@@ -1,0 +1,38 @@
+syntax = "proto3";
+package message;
+
+import "common.proto";
+
+message User {
+    string id = 1;
+    string nickname = 2;
+    string pic_path = 3; 
+}
+
+message LoginRequest {
+    string id = 1;
+    string password = 2;
+}
+
+message LoginResponse {
+    Response response = 1;
+    string token = 2;
+}
+
+message GetUserInfoRequest {
+    string token = 1;
+}
+
+message EditUserInfoRequest {
+    string token = 1;
+    User user = 2;
+}
+
+message GetUserInfoResponse {
+    Response response = 1;
+    User user = 2;
+}
+
+message AuthRequest {
+    string token = 1;
+}
