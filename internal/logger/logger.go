@@ -22,8 +22,8 @@ func Init(path string) {
 		core := zapcore.NewCore(
 			zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()),
 			w,
-			zap.ErrorLevel,
+			zap.InfoLevel,
 		)
-		Instance = zap.New(core, zap.AddCaller())
+		Instance = zap.New(core, zap.AddStacktrace(zap.ErrorLevel))
 	})
 }

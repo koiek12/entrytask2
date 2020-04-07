@@ -2,151 +2,174 @@ package message
 
 import (
 	"database/sql"
-	"fmt"
 	"net"
 	"os"
-	reflect "reflect"
 
 	"git.garena.com/youngiek.song/entry_task/internal/jwt"
-	"git.garena.com/youngiek.song/entry_task/internal/logger"
 	"git.garena.com/youngiek.song/entry_task/internal/models"
+	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 )
 
 type Server struct {
-	listener    net.Listener
-	db          *sql.DB
-	msgHandlers map[string]func(*MsgStream, *sql.DB, proto.Message)
+	listener    net.Listener                             // listener to accept new connection
+	handlers    map[uint]func(*MsgStream, proto.Message) // pre-registered handlers for each request
+	db          *sql.DB                                  // database connection to user DB
+	tokenIssuer *jwt.TokenIssuer                         // Generate and Authenticate JWT Token with secret Key
+	logger      *zap.Logger                              // for log
+	host, port  string                                   // listen host and port
 }
 
-func NewServer(host, port string) *Server {
+func NewServer(host, port string, db *sql.DB, tokenIssuer *jwt.TokenIssuer, logger *zap.Logger) *Server {
 	// initialize listen socket
 	listener, err := net.Listen("tcp", net.JoinHostPort(host, port))
 	if err != nil {
-		logger.Instance.Fatal("Error opening listen socket")
-		os.Exit(1)
-	}
-	// initialize database connection
-	db, err := sql.Open("mysql", "song:abcd@/entry_task")
-	if err != nil {
-		logger.Instance.Fatal("Cannot connect to DB " + err.Error())
-		os.Exit(1)
-	}
-	db.SetMaxOpenConns(100)
-	db.SetMaxIdleConns(100)
-	// check database alive
-	err = db.Ping()
-	if err != nil {
-		logger.Instance.Fatal("Cannot connect to DB " + err.Error())
+		logger.Fatal("Error opening listen socket")
 		os.Exit(1)
 	}
 
-	msgHandlers := make(map[string]func(*MsgStream, *sql.DB, proto.Message))
-	msgHandlers[reflect.TypeOf(&HealthcheckMessage{}).String()] = handleHealthCheck
-	msgHandlers[reflect.TypeOf(&LoginRequest{}).String()] = handleLogin
-	msgHandlers[reflect.TypeOf(&GetUserInfoRequest{}).String()] = handleGetUserInfo
-	msgHandlers[reflect.TypeOf(&EditUserInfoRequest{}).String()] = handleEditUserInfo
-	msgHandlers[reflect.TypeOf(&AuthRequest{}).String()] = handleAuthRequest
-	return &Server{
+	server := &Server{
+		host:        host,
+		port:        port,
 		listener:    listener,
+		handlers:    make(map[uint]func(*MsgStream, proto.Message)),
 		db:          db,
-		msgHandlers: msgHandlers,
+		tokenIssuer: tokenIssuer,
+		logger:      logger,
 	}
+	// register handler for each message
+	server.registerHandler(&HealthcheckMessage{}, server.healthCheck)
+	server.registerHandler(&LoginRequest{}, server.login)
+	server.registerHandler(&GetUserInfoRequest{}, server.getUserInfo)
+	server.registerHandler(&EditUserInfoRequest{}, server.editUserInfo)
+	server.registerHandler(&AuthRequest{}, server.authenticate)
+	return server
 }
 
-func (s *Server) getHandler(msg proto.Message) func(*MsgStream, *sql.DB, proto.Message) {
-	return s.msgHandlers[reflect.TypeOf(msg).String()]
+// register handler function to server's handler
+func (server *Server) registerHandler(msg proto.Message, handler func(*MsgStream, proto.Message)) error {
+	msgNum, err := GetMsgNum(msg)
+	if err != nil {
+		return err
+	}
+	server.handlers[msgNum] = handler
+	return nil
 }
 
-func (s *Server) Run() {
+// get handler for msg
+func (server *Server) getHandler(msg proto.Message) (func(*MsgStream, proto.Message), error) {
+	msgNum, err := GetMsgNum(msg)
+	if err != nil {
+		return nil, err
+	}
+	return server.handlers[msgNum], nil
+}
+
+// start backend server
+func (server *Server) Run() {
 	for {
-		logger.Instance.Info("Backend Server has started, Listening on port 3233...")
-		conn, err := s.listener.Accept()
+		server.logger.Info("Backend Server has started, Listening on " + net.JoinHostPort(server.host, server.port) + "...")
+		conn, err := server.listener.Accept()
 		if err != nil {
-			logger.Instance.Error("Error accepting connection")
+			server.logger.Error("Error accepting connection", zap.String("error", err.Error()))
 			break
 		}
-		go s.handleRequest(conn)
+		go server.handleRequest(conn)
 	}
 }
 
-func (s *Server) handleRequest(conn net.Conn) {
+//handle request message by message.
+func (server *Server) handleRequest(conn net.Conn) {
 	stream, _ := NewMsgStream(conn, 60)
-	defer logger.Instance.Info("close connection")
+	defer server.logger.Info("close connection", zap.String("remote", stream.RemoteAddr()))
 	defer stream.Close()
 	for {
+		//wait for next request
 		msg, err := stream.ReadMsg()
 		if err != nil {
-			if err, ok := err.(net.Error); ok && err.Timeout() {
-				logger.Instance.Info("Timeout waiting for new message")
+			if terr, ok := err.(net.Error); ok && terr.Timeout() {
+				server.logger.Info("Connection timeout waiting for new request", zap.String("remote", stream.RemoteAddr()))
 			} else {
-				logger.Instance.Error("Error receiving message")
+				server.logger.Error("Error receiving request", zap.String("remote", stream.RemoteAddr()), zap.String("error", err.Error()))
 			}
 			break
 		}
-		handler := s.getHandler(msg)
-		handler(stream, s.db, msg)
+		handler, err := server.getHandler(msg)
+		if err != nil {
+			server.logger.Error("Not handler registered message", zap.String("remote", stream.RemoteAddr()), zap.String("error", err.Error()))
+			break
+		}
+		handler(stream, msg)
 	}
 }
 
-func handleHealthCheck(st *MsgStream, db *sql.DB, r proto.Message) {
-	st.WriteMsg(&HealthcheckMessage{})
+// for health check of connection
+func (server *Server) healthCheck(stream *MsgStream, r proto.Message) {
+	stream.WriteMsg(&HealthcheckMessage{})
 }
 
-func handleLogin(st *MsgStream, db *sql.DB, r proto.Message) {
+// handle function for login request
+func (server *Server) login(stream *MsgStream, r proto.Message) {
 	req := r.(*LoginRequest)
 	id := req.Id
 	password := req.Password
-	valid, err := models.Authenticate(db, id, password)
+	valid, err := models.Authenticate(server.db, id, password)
 	if err != nil {
-		logger.Instance.Error("Error on DB." + err.Error())
-		st.WriteMsg(&LoginResponse{
+		server.logger.Error("Error authenticating id/password", zap.String("remote", stream.RemoteAddr()), zap.String("error", err.Error()))
+		stream.WriteMsg(&LoginResponse{
 			Response: &Response{Code: 2},
 		})
 		return
 	}
 	if !valid {
-		logger.Instance.Debug("Wrong password.")
-		st.WriteMsg(&LoginResponse{
+		server.logger.Warn("invalid Id/password", zap.String("remote", stream.RemoteAddr()), zap.String("id", id), zap.String("password", password))
+		stream.WriteMsg(&LoginResponse{
 			Response: &Response{Code: 1},
 		})
 		return
 	}
-	token := jwt.GenerateToken(id)
-
 	msg := &LoginResponse{
 		Response: &Response{Code: 0},
-		Token:    token,
+		Token:    server.tokenIssuer.GenerateToken(id),
 	}
-	st.WriteMsg(msg)
+	stream.WriteMsg(msg)
+	server.logger.Info("Handled login request", zap.String("remote", stream.RemoteAddr()), zap.String("id", id))
 }
 
-func handleGetUserInfo(st *MsgStream, db *sql.DB, r proto.Message) {
+// Get user info from database
+func (server *Server) getUserInfo(stream *MsgStream, r proto.Message) {
 	req := r.(*GetUserInfoRequest)
-	id, err := jwt.AuthenticateToken(req.Token)
+	id, err := server.tokenIssuer.AuthenticateToken(req.Token)
 	if err != nil {
-		logger.Instance.Debug("Token authentication failed" + err.Error())
-		st.WriteMsg(&GetUserInfoResponse{
+		server.logger.Error("Token authentication failed", zap.String("remote", stream.RemoteAddr()), zap.String("error", err.Error()))
+		stream.WriteMsg(&GetUserInfoResponse{
+			Response: &Response{Code: 3},
+		})
+		return
+	}
+	if id == "" {
+		server.logger.Warn("Invalid token", zap.String("remote", stream.RemoteAddr()), zap.String("error", err.Error()))
+		stream.WriteMsg(&GetUserInfoResponse{
 			Response: &Response{Code: 1},
 		})
 		return
 	}
-	user, err := models.GetUserById(db, id)
+	user, err := models.GetUserById(server.db, id)
 	if err != nil {
-		logger.Instance.Error("Error on DB." + err.Error())
-		st.WriteMsg(&GetUserInfoResponse{
+		server.logger.Error("Error on DB", zap.String("remote", stream.RemoteAddr()), zap.String("error", err.Error()))
+		stream.WriteMsg(&GetUserInfoResponse{
 			Response: &Response{Code: 2},
 		})
 		return
 	}
 	if user == nil {
-		logger.Instance.Debug("No such user")
-		st.WriteMsg(&GetUserInfoResponse{
+		server.logger.Info("No such user", zap.String("remote", stream.RemoteAddr()), zap.String("error", err.Error()))
+		stream.WriteMsg(&GetUserInfoResponse{
 			Response: &Response{Code: 3},
 		})
 		return
 	}
-	st.WriteMsg(&GetUserInfoResponse{
+	stream.WriteMsg(&GetUserInfoResponse{
 		Response: &Response{Code: 0},
 		User: &User{
 			Id:       user.Id,
@@ -154,36 +177,51 @@ func handleGetUserInfo(st *MsgStream, db *sql.DB, r proto.Message) {
 			PicPath:  user.PicPath,
 		},
 	})
+	server.logger.Info("Handled GetUserInfo request", zap.String("remote", stream.RemoteAddr()), zap.String("id", id))
 }
 
-func handleEditUserInfo(st *MsgStream, db *sql.DB, r proto.Message) {
+// edit user info in database
+func (server *Server) editUserInfo(stream *MsgStream, r proto.Message) {
 	req := r.(*EditUserInfoRequest)
-	_, err := jwt.AuthenticateToken(req.Token)
+	id, err := server.tokenIssuer.AuthenticateToken(req.Token)
 	if err != nil {
-		fmt.Println("Authenticate token failed. Invalid token.")
-		st.WriteMsg(&Response{Code: 1})
+		server.logger.Error("Token authentication failed", zap.String("remote", stream.RemoteAddr()), zap.String("error", err.Error()))
+		stream.WriteMsg(&Response{Code: 3})
 		return
 	}
-	err = models.SetUser(db, &models.User{
+	if id == "" {
+		server.logger.Warn("Invalid token", zap.String("remote", stream.RemoteAddr()), zap.String("token", req.Token))
+		stream.WriteMsg(&Response{Code: 1})
+		return
+	}
+	err = models.SetUser(server.db, &models.User{
 		Id:       req.User.Id,
 		Nickname: req.User.Nickname,
 		PicPath:  req.User.PicPath,
 	})
 	if err != nil {
-		fmt.Println("Failed to access DB.")
-		st.WriteMsg(&Response{Code: 2})
+		server.logger.Error("Error on DB", zap.String("remote", stream.RemoteAddr()), zap.String("error", err.Error()))
+		stream.WriteMsg(&Response{Code: 2})
 		return
 	}
-	st.WriteMsg(&Response{Code: 0})
+	stream.WriteMsg(&Response{Code: 0})
+	server.logger.Info("Handled EditUserInfo request", zap.String("remote", stream.RemoteAddr()), zap.String("id", id), zap.String("body", req.User.String()))
 }
 
-func handleAuthRequest(st *MsgStream, db *sql.DB, r proto.Message) {
+// authenticate access token.
+func (server *Server) authenticate(stream *MsgStream, r proto.Message) {
 	req := r.(*AuthRequest)
-	_, err := jwt.AuthenticateToken(req.Token)
+	id, err := server.tokenIssuer.AuthenticateToken(req.Token)
 	if err != nil {
-		fmt.Println("Authenticate token failed. Invalid token.")
-		st.WriteMsg(&Response{Code: 1})
+		server.logger.Error("Token authentication failed", zap.String("remote", stream.RemoteAddr()), zap.String("error", err.Error()))
+		stream.WriteMsg(&Response{Code: 1})
 		return
 	}
-	st.WriteMsg(&Response{Code: 0})
+	if id == "" {
+		server.logger.Info("Invalid token", zap.String("remote", stream.RemoteAddr()), zap.String("error", err.Error()))
+		stream.WriteMsg(&Response{Code: 1})
+		return
+	}
+	stream.WriteMsg(&Response{Code: 0})
+	server.logger.Info("Handled Authenticate request", zap.String("remote", stream.RemoteAddr()), zap.String("id", id))
 }

@@ -6,6 +6,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// return message type number of message
 func GetMsgNum(msg proto.Message) (uint, error) {
 	msgType := reflect.TypeOf(msg).String()
 	num, ok := msgNums[msgType]
@@ -15,6 +16,7 @@ func GetMsgNum(msg proto.Message) (uint, error) {
 	return num, nil
 }
 
+// find corresponding container by message type number and return it.
 func GetMsgContainer(typeNum uint) (proto.Message, error) {
 	containerFunc, ok := msgContainerFunc[typeNum]
 	if !ok {
@@ -23,17 +25,24 @@ func GetMsgContainer(typeNum uint) (proto.Message, error) {
 	return containerFunc(), nil
 }
 
+// Mapping from message class name to message number.
+// This map is used to determine which type number to write given message.
+// Type number written will later be used by message reader to determine how to
+// translate it. When adding new message, assign new number to message and configure this map
 var msgNums = map[string]uint{
 	"*message.HealthCheckMessage":  0,
 	"*message.LoginRequest":        1,
 	"*message.GetUserInfoRequest":  2,
 	"*message.EditUserInfoRequest": 3,
 	"*message.AuthRequest":         4,
-	"*message.Response":            100,
-	"*message.LoginResponse":       101,
-	"*message.GetUserInfoResponse": 102,
+	"*message.Response":            5,
+	"*message.LoginResponse":       6,
+	"*message.GetUserInfoResponse": 7,
 }
 
+// Mapping from message number to it's corresponding container generater.
+// This map is used to determine which container to generate when reading the message given type number.
+// When adding new message, assign new number to message and configure this map.
 var msgContainerFunc = map[uint]func() proto.Message{
 	0: func() proto.Message {
 		return &HealthcheckMessage{}
@@ -50,13 +59,13 @@ var msgContainerFunc = map[uint]func() proto.Message{
 	4: func() proto.Message {
 		return &AuthRequest{}
 	},
-	100: func() proto.Message {
+	5: func() proto.Message {
 		return &Response{}
 	},
-	101: func() proto.Message {
+	6: func() proto.Message {
 		return &LoginResponse{}
 	},
-	102: func() proto.Message {
+	7: func() proto.Message {
 		return &GetUserInfoResponse{}
 	},
 }

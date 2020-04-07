@@ -4,24 +4,59 @@ import (
 	"fmt"
 )
 
+// Client to request and get response from backend TCP server
+// Client use tcp connection pool(MsgStreamPool) whenever there is request.
 type Client struct {
 	pool *MsgStreamPool
 }
 
-func NewClient() *Client {
+// Create New Client to connect server.
+func NewClient(host, port string, maxConn int) *Client {
 	return &Client{
-		pool: NewMsgStreamPool("tcp", "localhost", "3233", 100),
+		pool: NewMsgStreamPool("tcp", host, port, int32(maxConn)),
 	}
 }
 
-type CodeError struct {
-	code uint32
+type AuthError struct{}
+
+func (e AuthError) Error() string {
+	return fmt.Sprintf("Authentication fail")
 }
 
-func (e CodeError) Error() string {
-	return fmt.Sprintf("Error code : %d", e.code)
+type DBError struct{}
+
+func (e DBError) Error() string {
+	return "DB error"
 }
 
+type InputError struct{}
+
+func (e InputError) Error() string {
+	return "Wrong input"
+}
+
+type UnknownError struct{}
+
+func (e UnknownError) Error() string {
+	return "Unknown Error"
+}
+
+// function to create error from TCP message error code
+func getErrorFromCode(code uint32) error {
+	switch code {
+	case 1:
+		return AuthError{}
+	case 2:
+		return DBError{}
+	case 3:
+		return InputError{}
+	default:
+		return UnknownError{}
+	}
+}
+
+// try login in backend server, If success, token is returned.
+// return error on network or backend server failure, in this case token is empty string
 func (c *Client) Login(id, password string) (string, error) {
 	stream, err := c.pool.GetMsgStream()
 	if err != nil {
@@ -44,11 +79,13 @@ func (c *Client) Login(id, password string) (string, error) {
 
 	logRes := resMsg.(*LoginResponse)
 	if logRes.Response.Code > uint32(0) {
-		return "", &CodeError{logRes.Response.Code}
+		return "", getErrorFromCode(logRes.Response.Code)
 	}
 	return logRes.Token, nil
 }
 
+// Get user information from backend TCP server.
+// return error on network or backend server failure
 func (c *Client) GetUserInfo(token string) (*User, error) {
 	stream, err := c.pool.GetMsgStream()
 	if err != nil {
@@ -68,32 +105,39 @@ func (c *Client) GetUserInfo(token string) (*User, error) {
 
 	getRes := resMsg.(*GetUserInfoResponse)
 	if getRes.Response.Code > uint32(0) {
-		return nil, &CodeError{getRes.Response.Code}
+		return nil, getErrorFromCode(getRes.Response.Code)
 	}
 	return getRes.User, nil
 }
 
-func (c *Client) Authenticate(token string) (bool, error) {
+// Authenticate JWT access token
+// return error on network or backend server failure
+func (c *Client) Authenticate(token string) error {
 	stream, err := c.pool.GetMsgStream()
 	if err != nil {
-		return false, err
+		return err
 	}
 	err = stream.WriteMsg(&AuthRequest{Token: token})
 	if err != nil {
 		c.pool.destroyMsgStream(stream)
-		return false, err
+		return err
 	}
 	resMsg, err := stream.ReadMsg()
 	if err != nil {
 		c.pool.destroyMsgStream(stream)
-		return false, err
+		return err
 	}
 	c.pool.closeMsgStream(stream)
 
-	authMsg := resMsg.(*Response)
-	return authMsg.Code == uint32(0), nil
+	res := resMsg.(*Response)
+	if res.Code > uint32(0) {
+		return getErrorFromCode(res.Code)
+	}
+	return nil
 }
 
+// Edit User information from backend TCP server
+// return error on network or backend server failure
 func (c *Client) EditUserInfo(token string, user *User) error {
 	stream, err := c.pool.GetMsgStream()
 	if err != nil {
@@ -114,9 +158,9 @@ func (c *Client) EditUserInfo(token string, user *User) error {
 	}
 	c.pool.closeMsgStream(stream)
 
-	editRes := resMsg.(*Response)
-	if editRes.Code > uint32(0) {
-		return &CodeError{editRes.Code}
+	res := resMsg.(*Response)
+	if res.Code > uint32(0) {
+		return getErrorFromCode(res.Code)
 	}
 	return nil
 }

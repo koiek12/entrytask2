@@ -9,10 +9,10 @@ type UserCache struct {
 	client *redis.Client
 }
 
-func NewUserCache() *UserCache {
+func NewUserCache(host, port string) *UserCache {
 	return &UserCache{
 		client: redis.NewClient(&redis.Options{
-			Addr:     "localhost:6379",
+			Addr:     host + ":" + port,
 			Password: "",
 			DB:       0,
 		}),
