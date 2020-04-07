@@ -23,6 +23,7 @@ func initRoute(userController *controller.UserController, docRoot string) {
 }
 
 func main() {
+	logLevel := "info"
 	logPath := "web.log"
 	backendHost, backendPort := "localhost", "3233"
 	backendMaxConn := 100
@@ -30,7 +31,7 @@ func main() {
 	docRoot := "../../web/"
 	listenHost, listenPort := "localhost", "8080"
 
-	logger.Init(logPath)
+	logger.Init(logPath, logLevel)
 	client := message.NewClient(backendHost, backendPort, backendMaxConn)
 	cache := cache.NewUserCache(cacheHost, cachePort)
 	userController := controller.NewUserController(client, cache, logger.Instance, docRoot)

@@ -11,8 +11,10 @@ import (
 var Instance *zap.Logger
 var once sync.Once
 
-func Init(path string) {
+func Init(path, levelStr string) {
 	once.Do(func() {
+		var level zapcore.Level
+		level.UnmarshalText([]byte(levelStr))
 		w := zapcore.AddSync(&lumberjack.Logger{
 			Filename:   path,
 			MaxSize:    500,
@@ -22,7 +24,7 @@ func Init(path string) {
 		core := zapcore.NewCore(
 			zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()),
 			w,
-			zap.InfoLevel,
+			level,
 		)
 		Instance = zap.New(core, zap.AddStacktrace(zap.ErrorLevel))
 	})

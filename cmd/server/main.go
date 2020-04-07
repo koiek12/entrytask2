@@ -33,6 +33,7 @@ func initDB(host, port, id, passwd string, maxDBConn int) *sql.DB {
 }
 
 func main() {
+	logLevel := "info"
 	logPath := "server.log"
 	dbHost, dbPort := "localhost", "3306"
 	dbId, dbPasswd := "song", "abcd"
@@ -41,7 +42,7 @@ func main() {
 	jwtSecretKey := "young"
 	var tokenExpireTime time.Duration = 30
 
-	logger.Init(logPath)
+	logger.Init(logPath, logLevel)
 	// initialize database connection
 	db := initDB(dbHost, dbPort, dbId, dbPasswd, dbMaxConn)
 	tokenIssuer := jwt.NewTokenIssuer(jwtSecretKey, tokenExpireTime)
