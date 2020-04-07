@@ -1,0 +1,16 @@
+default: &default
+  tcp:
+    listen_host: localhost
+    listen_port: 3233
+  database:
+    user: song
+    password: abcd
+    host: localhost
+    port: 3306
+    max_connection: 100
+  jwt:
+    secret_key: young
+    expire_time: 30
+  log:
+    level: info
+    path: "server.log"

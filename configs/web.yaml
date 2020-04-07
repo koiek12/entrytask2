@@ -1,0 +1,15 @@
+default: &default
+  http:
+    listen_host: localhost
+    listen_port: 8080
+    document_root: ../../web/
+  tcp:
+    host: localhost
+    port: 3233
+    max_connection: 100
+  redis:
+    host: localhost
+    port: 6379
+  log:
+    level: info
+    path: "web.log"
