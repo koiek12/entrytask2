@@ -13,6 +13,7 @@ import (
 	"go.uber.org/zap"
 )
 
+// UserController provides handler functions for http server. UserController is also able to access injected dependecies.
 type UserController struct {
 	client  *message.Client
 	cache   *cache.UserCache
@@ -20,6 +21,7 @@ type UserController struct {
 	docRoot string
 }
 
+// NewUserController create new instance of user controller with injected dependencies.
 func NewUserController(client *message.Client, cache *cache.UserCache, logger *zap.Logger, docRoot string) *UserController {
 	return &UserController{
 		client:  client,
@@ -29,11 +31,14 @@ func NewUserController(client *message.Client, cache *cache.UserCache, logger *z
 	}
 }
 
+// LoginPage shows login page to user.
 func (controller *UserController) LoginPage(w http.ResponseWriter, r *http.Request) {
 	t, _ := template.ParseFiles(controller.docRoot + "/template/login.html")
 	t.Execute(w, nil)
 }
 
+// Login tries login with id/password. Authenticate user's id/password by sending login request to backend TCP server.
+// If successful, issue JWT access token to user's cookie and redirect to main page.
 func (controller *UserController) Login(w http.ResponseWriter, r *http.Request) {
 	id := r.PostFormValue("id")
 	passwd := r.PostFormValue("pwd")
@@ -57,7 +62,10 @@ func (controller *UserController) Login(w http.ResponseWriter, r *http.Request) 
 	controller.logger.Info("Login request", zap.String("remote", r.RemoteAddr), zap.String("path", r.URL.Path))
 }
 
-func (controller *UserController) GetUserInfo(w http.ResponseWriter, r *http.Request) {
+// Main shows user main page which contains user's information.
+// User should have JWT access token as cookie to retrieve the information from backend TCP server.
+// After retrieving user info from backend server, it draws main page with the information.
+func (controller *UserController) Main(w http.ResponseWriter, r *http.Request) {
 	tokenCookie, err := r.Cookie("access_token")
 	if err != nil {
 		controller.logger.Info("No access token", zap.String("remote", r.RemoteAddr), zap.String("path", r.URL.Path), zap.String("error", err.Error()))
@@ -65,7 +73,7 @@ func (controller *UserController) GetUserInfo(w http.ResponseWriter, r *http.Req
 		fmt.Fprintln(w, "Can't access this page. You don't have access token.", err)
 		return
 	}
-	id, err := jwt.GetIdFromToken(tokenCookie.Value)
+	id, err := jwt.GetIDFromToken(tokenCookie.Value)
 	if err != nil {
 		controller.logger.Warn("No ID claim in access token", zap.String("remote", r.RemoteAddr), zap.String("path", r.URL.Path), zap.String("token", tokenCookie.Value), zap.String("error", err.Error()))
 		w.WriteHeader(http.StatusUnauthorized)
@@ -104,6 +112,9 @@ func (controller *UserController) GetUserInfo(w http.ResponseWriter, r *http.Req
 	controller.logger.Info("request success", zap.String("remote", r.RemoteAddr), zap.String("path", r.URL.Path), zap.String("token", tokenCookie.Value))
 }
 
+// EditUserInfo modify user's information.
+// User should have JWT access token as cookie to retrieve the information from backend TCP server.
+// After successfully modifying user info from backend server, it redirect to main page.
 func (controller *UserController) EditUserInfo(w http.ResponseWriter, r *http.Request) {
 	tokenCookie, err := r.Cookie("access_token")
 	if err != nil {
@@ -112,7 +123,7 @@ func (controller *UserController) EditUserInfo(w http.ResponseWriter, r *http.Re
 		fmt.Fprintln(w, "Can't access this page. You don't have access token.", err)
 		return
 	}
-	id, err := jwt.GetIdFromToken(tokenCookie.Value)
+	id, err := jwt.GetIDFromToken(tokenCookie.Value)
 	if err != nil {
 		controller.logger.Warn("No ID claim in access token", zap.String("remote", r.RemoteAddr), zap.String("path", r.URL.Path), zap.String("token", tokenCookie.Value), zap.String("error", err.Error()))
 		w.WriteHeader(http.StatusUnauthorized)
@@ -146,6 +157,9 @@ func (controller *UserController) EditUserInfo(w http.ResponseWriter, r *http.Re
 	controller.logger.Info("request success", zap.String("remote", r.RemoteAddr), zap.String("path", r.URL.Path), zap.String("token", tokenCookie.Value))
 }
 
+// UploadPhoto uploads user's profile picture.
+// User should have JWT access token as cookie to authenticate your access priviligies from TCP backend server.
+// After successfully modifying picture, it redirect to main page.
 func (controller *UserController) UploadPhoto(w http.ResponseWriter, r *http.Request) {
 	tokenCookie, err := r.Cookie("access_token")
 	if err != nil {

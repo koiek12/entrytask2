@@ -83,6 +83,7 @@ func (msp *MsgStreamPool) GetMsgStream() (*MsgStream, error) {
 
 // periodically remove stale connections from pool.
 func (msp *MsgStreamPool) checkStale() {
+	// check every stale connections every 20 seconds
 	ticker := time.NewTicker(time.Second * 20)
 	defer ticker.Stop()
 	for {

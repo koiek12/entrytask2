@@ -1,0 +1,15 @@
+tcp:
+  host: localhost
+  port: 3233
+database:
+  user: song
+  password: abcd
+  host: localhost
+  port: 3306
+  max_connection: 100
+jwt:
+  secret: young
+  expire: 30
+log:
+  level: info
+  path: "server.log"

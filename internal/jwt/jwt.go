@@ -6,26 +6,29 @@ import (
 	"github.com/dgrijalva/jwt-go"
 )
 
-// Issue JWT token
+// TokenIssuer issues JWT token for user validation. Tokens have expiration time for security
 type TokenIssuer struct {
 	key        string
 	expireTime time.Duration
 }
 
+// NewTokenIssuer create and return TokenIssuer with secret key and expiration time.
 func NewTokenIssuer(key string, expireTime time.Duration) *TokenIssuer {
 	return &TokenIssuer{
 		key:        key,
-		expireTime: time.Minute * expireTime,
+		expireTime: expireTime,
 	}
 }
 
+// TokenExpiredError occurs when token exp field is before current time
 type TokenExpiredError struct{}
 
 func (e TokenExpiredError) Error() string {
 	return "token has expired"
 }
 
-// generate JWT token.
+// GenerateToken generate JWT token with secret key and claims of user's id, expiration time and issue time.
+// On succes, returns generated token. On fail return empty string
 func (issuer *TokenIssuer) GenerateToken(id string) string {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"id":  id,
@@ -33,17 +36,19 @@ func (issuer *TokenIssuer) GenerateToken(id string) string {
 		"exp": time.Now().Add(issuer.expireTime).Unix(),
 	})
 
-	tokenString, err := token.SignedString([]byte("young"))
+	tokenString, err := token.SignedString([]byte(issuer.key))
 	if err != nil {
 		return ""
 	}
 	return tokenString
 }
 
-// authenticate JWT token, on success return owner id of token, on fail return empty string
+// AuthenticateToken check given JWT token's signature with it's secret key.
+// It also check expiration date and issue date. Any one of verification fails, returns error.
+// On success return owner id of token.
 func (issuer *TokenIssuer) AuthenticateToken(tokenString string) (string, error) {
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-		return []byte("young"), nil
+		return []byte(issuer.key), nil
 	})
 	if err != nil {
 		return "", err
@@ -59,8 +64,8 @@ func (issuer *TokenIssuer) AuthenticateToken(tokenString string) (string, error)
 	return "", nil
 }
 
-// extract ID from JWT token claim
-func GetIdFromToken(tokenString string) (string, error) {
+// GetIDFromToken extract id claim from JWT token
+func GetIDFromToken(tokenString string) (string, error) {
 	token, err := jwt.Parse(tokenString, nil)
 	if claims, ok := token.Claims.(jwt.MapClaims); ok {
 		return claims["id"].(string), nil
