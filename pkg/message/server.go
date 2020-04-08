@@ -11,6 +11,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// Server listens request from message.client.
 type Server struct {
 	listener    net.Listener                             // listener to accept new connection
 	handlers    map[uint]func(*MsgStream, proto.Message) // pre-registered handlers for each request
@@ -20,6 +21,7 @@ type Server struct {
 	host, port  string                                   // listen host and port
 }
 
+// NewServer create new instance of server.
 func NewServer(host, port string, db *sql.DB, tokenIssuer *jwt.TokenIssuer, logger *zap.Logger) *Server {
 	// initialize listen socket
 	listener, err := net.Listen("tcp", net.JoinHostPort(host, port))
@@ -46,9 +48,9 @@ func NewServer(host, port string, db *sql.DB, tokenIssuer *jwt.TokenIssuer, logg
 	return server
 }
 
-// register handler function to server's handler
+// registerHandler function to server's handler
 func (server *Server) registerHandler(msg proto.Message, handler func(*MsgStream, proto.Message)) error {
-	msgNum, err := GetMsgNum(msg)
+	msgNum, err := getMsgNum(msg)
 	if err != nil {
 		return err
 	}
@@ -56,19 +58,19 @@ func (server *Server) registerHandler(msg proto.Message, handler func(*MsgStream
 	return nil
 }
 
-// get handler for msg
+// getHandler map message to it's corresponding handler function.
 func (server *Server) getHandler(msg proto.Message) (func(*MsgStream, proto.Message), error) {
-	msgNum, err := GetMsgNum(msg)
+	msgNum, err := getMsgNum(msg)
 	if err != nil {
 		return nil, err
 	}
 	return server.handlers[msgNum], nil
 }
 
-// start backend server
+// Run start the server listening to tcp request.
 func (server *Server) Run() {
+	server.logger.Info("Backend Server has started, Listening on " + net.JoinHostPort(server.host, server.port) + "...")
 	for {
-		server.logger.Info("Backend Server has started, Listening on " + net.JoinHostPort(server.host, server.port) + "...")
 		conn, err := server.listener.Accept()
 		if err != nil {
 			server.logger.Error("Error accepting connection", zap.String("error", err.Error()))
@@ -78,7 +80,7 @@ func (server *Server) Run() {
 	}
 }
 
-//handle request message by message.
+// handleRequest process request and send response to client.
 func (server *Server) handleRequest(conn net.Conn) {
 	stream, _ := NewMsgStream(conn, 60)
 	defer server.logger.Info("close connection", zap.String("remote", stream.RemoteAddr()))
@@ -103,12 +105,14 @@ func (server *Server) handleRequest(conn net.Conn) {
 	}
 }
 
-// for health check of connection
+// healthCheck handles healthCheck message from client. It is just for check health of server.
 func (server *Server) healthCheck(stream *MsgStream, r proto.Message) {
 	stream.WriteMsg(&HealthcheckMessage{})
 }
 
-// handle function for login request
+// login handles login request. Compare password of user with db's data.
+// On success, response with generated jwt token and error code 0.
+// On fail, response with empty token and positive error code.
 func (server *Server) login(stream *MsgStream, r proto.Message) {
 	req := r.(*LoginRequest)
 	id := req.Id
@@ -136,7 +140,9 @@ func (server *Server) login(stream *MsgStream, r proto.Message) {
 	server.logger.Info("Handled login request", zap.String("remote", stream.RemoteAddr()), zap.String("id", id))
 }
 
-// Get user info from database
+// getUserInfo check client's priviliege by JWT token and get user's information from DB.
+// On success, response with user data and error code 0.
+// On fail, response with user data and positive error code.
 func (server *Server) getUserInfo(stream *MsgStream, r proto.Message) {
 	req := r.(*GetUserInfoRequest)
 	id, err := server.tokenIssuer.AuthenticateToken(req.Token)
@@ -180,7 +186,9 @@ func (server *Server) getUserInfo(stream *MsgStream, r proto.Message) {
 	server.logger.Info("Handled GetUserInfo request", zap.String("remote", stream.RemoteAddr()), zap.String("id", id))
 }
 
-// edit user info in database
+// editUserInfo check client's priviliege by JWT token and edit user's information from DB.
+// On success, response with error code 0.
+// On fail, response with positive error code.
 func (server *Server) editUserInfo(stream *MsgStream, r proto.Message) {
 	req := r.(*EditUserInfoRequest)
 	id, err := server.tokenIssuer.AuthenticateToken(req.Token)
@@ -208,7 +216,9 @@ func (server *Server) editUserInfo(stream *MsgStream, r proto.Message) {
 	server.logger.Info("Handled EditUserInfo request", zap.String("remote", stream.RemoteAddr()), zap.String("id", id), zap.String("body", req.User.String()))
 }
 
-// authenticate access token.
+// getUserInfo check client's priviliege by JWT token.
+// On success, response with error code 0.
+// On fail, response with positive error code.
 func (server *Server) authenticate(stream *MsgStream, r proto.Message) {
 	req := r.(*AuthRequest)
 	id, err := server.tokenIssuer.AuthenticateToken(req.Token)

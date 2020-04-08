@@ -43,7 +43,7 @@ func (u *User) updateStatement() string {
 	return stmtStr.String()
 }
 
-// Get User information from DB
+// GetUserById fetch user information from DB
 func GetUserById(db *sql.DB, id string) (*User, error) {
 	var user User
 	rows, err := db.Query(fmt.Sprintf("SELECT id, password, nickname, pic_path FROM USER WHERE id = '%s'", id))
@@ -61,7 +61,7 @@ func GetUserById(db *sql.DB, id string) (*User, error) {
 	return &user, nil
 }
 
-// Update User information in DB
+// SetUser Update User's information in DB, empty field's are not updated
 func SetUser(db *sql.DB, user *User) error {
 	res, err := db.Exec(fmt.Sprintf("UPDATE USER SET %s WHERE id='%s'", user.updateStatement(), user.Id))
 	if err != nil {
@@ -71,7 +71,7 @@ func SetUser(db *sql.DB, user *User) error {
 	return err
 }
 
-// Get User information from DB, compare it with password
+// Authenticate fetch user's information by calling GetUserInfo from DB, compare it with password.
 func Authenticate(db *sql.DB, id, password string) (bool, error) {
 	user, err := GetUserById(db, id)
 	if err != nil {

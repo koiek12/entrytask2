@@ -8,8 +8,8 @@ import (
 
 // TokenIssuer issues JWT token for user validation. Tokens have expiration time for security
 type TokenIssuer struct {
-	key        string
-	expireTime time.Duration
+	key        string        // secret key to create signature of JWT
+	expireTime time.Duration // expiration duration of token
 }
 
 // NewTokenIssuer create and return TokenIssuer with secret key and expiration time.

@@ -11,6 +11,7 @@ import (
 	"git.garena.com/youngiek.song/entry_task/internal/logger"
 	"git.garena.com/youngiek.song/entry_task/pkg/message"
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/sevlyar/go-daemon"
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v2"
 )
@@ -18,8 +19,8 @@ import (
 var configPath string
 
 func initCmdLineFlag() {
-	flag.StringVar(&configPath, "config", "server.yaml", "configuration file")
-	flag.StringVar(&configPath, "c", "server.yaml", "configuration file")
+	flag.StringVar(&configPath, "config", "./configs/server.yaml", "configuration file")
+	flag.StringVar(&configPath, "c", "./configs/server.yaml", "configuration file")
 	flag.Parse()
 }
 
@@ -76,6 +77,21 @@ func initDB(host, port, id, passwd string, maxDBConn int) *sql.DB {
 }
 
 func main() {
+	//daemonize
+	cntxt := &daemon.Context{
+		PidFileName: "backend.pid",
+		PidFilePerm: 0644,
+		Umask:       027,
+	}
+	d, err := cntxt.Reborn()
+	if err != nil {
+		fmt.Println("Unable to run: ", err)
+	}
+	if d != nil {
+		return
+	}
+	defer cntxt.Release()
+
 	initCmdLineFlag()
 	conf, err := getConfig(configPath)
 	if err != nil {
@@ -83,7 +99,6 @@ func main() {
 		return
 	}
 	logger.Init(conf.Log.Path, conf.Log.Level)
-
 	// initialize database connection
 	db := initDB(conf.Database.Host, conf.Database.Port, conf.Database.User, conf.Database.Password, conf.Database.MaxConn)
 	tokenIssuer := jwt.NewTokenIssuer(conf.JWT.SecretKey, time.Minute*time.Duration(conf.JWT.ExpireTime))

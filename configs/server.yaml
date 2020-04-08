@@ -12,4 +12,4 @@ jwt:
   expire: 30
 log:
   level: info
-  path: "server.log"
+  path: "backend.log"

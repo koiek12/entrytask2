@@ -19,30 +19,32 @@ type MsgStream struct {
 	tmp  []byte        // temporal buffer for varint write
 }
 
+// NewMsgStream create new instance of MsgStream with network connection and read timeout duration.
 func NewMsgStream(conn net.Conn, timeout time.Duration) (*MsgStream, error) {
 	// set maxium read deadline for connection
 	conn.SetReadDeadline(time.Now().Add(time.Second * timeout))
 	return &MsgStream{conn, bufio.NewReader(conn), bufio.NewWriter(conn), make([]byte, 32)}, nil
 }
 
+// Close closes stream's undelying network connection.
 func (ms *MsgStream) Close() {
 	ms.conn.Close()
 }
 
-// read variable length integer from stream
-func (ms *MsgStream) ReadVint() (uint, error) {
+// readVarInt read a variable length integer from undelying network cconnection.
+func (ms *MsgStream) readVarInt() (uint, error) {
 	val, err := binary.ReadUvarint(ms.in)
 	return uint(val), err
 }
 
-// write variable length integer to stream
-func (ms *MsgStream) WriteVint(val uint) error {
+// writeVarInt write a variable length integer to undelying network cconnection.
+func (ms *MsgStream) writeVarInt(val uint) error {
 	n := binary.PutUvarint(ms.tmp, uint64(val))
 	n, err := ms.out.Write(ms.tmp[:n])
 	return err
 }
 
-// read length-delimted data from stream
+// readLenDelimData read length-delimted data from stream
 func (ms *MsgStream) readLenDelimData() ([]byte, error) {
 	size, err := binary.ReadUvarint(ms.in)
 	if err != nil {
@@ -61,7 +63,7 @@ func (ms *MsgStream) readLenDelimData() ([]byte, error) {
 	return data, nil
 }
 
-// write length-delimted data to stream
+// writeLenDelimData write length-delimted data to stream
 func (ms *MsgStream) writeLenDelimData(data []byte) error {
 	n := binary.PutUvarint(ms.tmp, uint64(len(data)))
 	n, err := ms.out.Write(ms.tmp[:n])
@@ -72,9 +74,9 @@ func (ms *MsgStream) writeLenDelimData(data []byte) error {
 	return err
 }
 
-// read a message from stream. Message consist of message type(varint) + data(protobuf data)
+// ReadMsg read a message from stream. Message consist of message type(varint) + data(protobuf data)
 func (ms *MsgStream) ReadMsg() (proto.Message, error) {
-	typeNum, err := ms.ReadVint()
+	typeNum, err := ms.readVarInt()
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +85,7 @@ func (ms *MsgStream) ReadMsg() (proto.Message, error) {
 		return nil, err
 	}
 	// create empty message container
-	container, err := GetMsgContainer(typeNum)
+	container, err := getMsgContainer(typeNum)
 	if err != nil {
 		return nil, err
 	}
@@ -95,13 +97,13 @@ func (ms *MsgStream) ReadMsg() (proto.Message, error) {
 	return container, nil
 }
 
-// wrtie a message to stream. Message consist of message type(varint) + data(protobuf data)
+// WriteMsg wrtie a message to stream. Message consist of message type(varint) + data(protobuf data)
 func (ms *MsgStream) WriteMsg(msg proto.Message) error {
-	typeNum, err := GetMsgNum(msg)
+	typeNum, err := getMsgNum(msg)
 	if err != nil {
 		return err
 	}
-	err = ms.WriteVint(typeNum)
+	err = ms.writeVarInt(typeNum)
 	if err != nil {
 		return err
 	}
@@ -117,6 +119,7 @@ func (ms *MsgStream) WriteMsg(msg proto.Message) error {
 	return err
 }
 
+// RemoteAddr returns remote address of underlying network connection.
 func (ms *MsgStream) RemoteAddr() string {
 	return ms.conn.RemoteAddr().String()
 }

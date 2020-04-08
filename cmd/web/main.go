@@ -13,14 +13,15 @@ import (
 	"gopkg.in/yaml.v2"
 
 	"github.com/gorilla/mux"
+	"github.com/sevlyar/go-daemon"
 	"go.uber.org/zap"
 )
 
 var configPath string
 
 func initCmdLineFlag() {
-	flag.StringVar(&configPath, "config", "web.yaml", "configuration file")
-	flag.StringVar(&configPath, "c", "web.yaml", "configuration file")
+	flag.StringVar(&configPath, "config", "./configs/web.yaml", "configuration file")
+	flag.StringVar(&configPath, "c", "./configs/web.yaml", "configuration file")
 	flag.Parse()
 }
 
@@ -68,8 +69,23 @@ func initRoute(userController *controller.UserController, docRoot string) {
 }
 
 func main() {
+	//daemonize
+	cntxt := &daemon.Context{
+		PidFileName: "web.pid",
+		PidFilePerm: 0644,
+		Umask:       027,
+	}
+	d, err := cntxt.Reborn()
+	if err != nil {
+		fmt.Println("Unable to run: ", err)
+	}
+	if d != nil {
+		return
+	}
+	defer cntxt.Release()
+
 	initCmdLineFlag()
-	cfg, err := getConfig("../../configs/web.yaml")
+	cfg, err := getConfig(configPath)
 	if err != nil {
 		fmt.Println("Cannot open config file ", err.Error)
 		return

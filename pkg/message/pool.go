@@ -23,7 +23,7 @@ type MsgStreamPool struct {
 	connType, connHost, connPort string          //connection info
 }
 
-// Create new message stream
+// NewMsgStreamPool create new message stream
 func NewMsgStreamPool(connType, connHost, connPort string, cap int32) *MsgStreamPool {
 	pool := &MsgStreamPool{
 		pool:     make(chan *MsgStream, cap),

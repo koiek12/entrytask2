@@ -6,8 +6,8 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// return message type number of message
-func GetMsgNum(msg proto.Message) (uint, error) {
+// getMsgNum return message type number of message
+func getMsgNum(msg proto.Message) (uint, error) {
 	msgType := reflect.TypeOf(msg).String()
 	num, ok := msgNums[msgType]
 	if !ok {
@@ -16,8 +16,8 @@ func GetMsgNum(msg proto.Message) (uint, error) {
 	return num, nil
 }
 
-// find corresponding container by message type number and return it.
-func GetMsgContainer(typeNum uint) (proto.Message, error) {
+// getMsgContainer find corresponding container by message type number and return it.
+func getMsgContainer(typeNum uint) (proto.Message, error) {
 	containerFunc, ok := msgContainerFunc[typeNum]
 	if !ok {
 		return nil, nil
